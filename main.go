@@ -2,73 +2,39 @@ package main
 
 import (
 	"fmt"
-	"net"
+	"os"
+
+	"github.com/miekg/dns"
 )
 
-// DNSHandler é uma estrutura que lida com solicitações DNS.
-type DNSHandler struct{}
+func dnsHandler(w dns.ResponseWriter, r *dns.Msg) {
+	m := new(dns.Msg)
+	m.SetReply(r)
+	m.Authoritative = true
 
-// ServeDNS processa solicitações DNS recebidas pelo servidor.
-func (h *DNSHandler) ServeDNS(conn *net.UDPConn) {
-	buffer := make([]byte, 1024)
-
-	for {
-		n, addr, err := conn.ReadFromUDP(buffer)
-		if err != nil {
-			fmt.Printf("Erro ao ler mensagem DNS: %v\n", err)
-			return
-		}
-
-		// Processar a mensagem DNS recebida (implementação futura)
-		fmt.Printf("Recebida mensagem DNS de %s: %s\n", addr.String(), string(buffer[:n]))
-
-		// TODO: Implementar lógica para analisar e responder às consultas DNS
-		m := h.parseDNSMessage(buffer[:n])
-
-		// Enviar resposta de exemplo (implementação futura)
-		if _, err := conn.WriteToUDP(m, addr); err != nil {
-			fmt.Printf("Erro ao enviar resposta DNS: %v\n", err)
+	for _, q := range r.Question {
+		if q.Name == "meubanco.local." && q.Qtype == dns.TypeA {
+			rr, err := dns.NewRR(fmt.Sprintf("%s A %s", q.Name, "172.29.0.4")) // Substitua "127.0.0.1" pelo endereço IP correto do seu banco de dados
+			if err != nil {
+				fmt.Println("Erro ao criar resposta DNS:", err)
+				return
+			}
+			m.Answer = append(m.Answer, rr)
 		}
 	}
-}
 
-// parseDNSMessage analisa uma mensagem DNS e retorna uma resposta adequada.
-func (h *DNSHandler) parseDNSMessage(msg []byte) []byte {
-	// Aqui você pode implementar a lógica para analisar a mensagem DNS e retornar uma resposta adequada.
-	// Por enquanto, vamos apenas retornar uma resposta de exemplo.
-	return []byte("Exemplo de resposta DNS")
+	if err := w.WriteMsg(m); err != nil {
+		fmt.Println("Erro ao enviar resposta DNS:", err)
+	}
 }
 
 func main() {
-	// Configurações do servidor DNS
-	ip := "127.0.0.1"
-	port := 53
-
-	// Resolver endereço IP
-	ipAddr := net.ParseIP(ip)
-	if ipAddr == nil {
-		fmt.Printf("Endereço IP inválido: %s\n", ip)
-		return
+	dns.HandleFunc(".", dnsHandler)
+	port := ":8053"
+	server := &dns.Server{Addr: port, Net: "udp"}
+	fmt.Printf("Servidor DNS iniciado na porta %s\n", port)
+	if err := server.ListenAndServe(); err != nil {
+		fmt.Println("Erro ao iniciar o servidor DNS:", err)
+		os.Exit(1)
 	}
-
-	// Configurar endereço de escuta
-	serverAddr := &net.UDPAddr{
-		IP:   ipAddr,
-		Port: port,
-	}
-
-	// Criar conexão UDP
-	conn, err := net.ListenUDP("udp", serverAddr)
-	if err != nil {
-		fmt.Printf("Erro ao iniciar servidor DNS: %v\n", err)
-		return
-	}
-	defer conn.Close()
-
-	// Criar instância do handler DNS
-	handler := &DNSHandler{}
-
-	// Iniciar o loop de servir DNS
-	fmt.Printf("Servidor DNS escutando em %s:%d...\n", ip, port)
-	handler.ServeDNS(conn)
 }
